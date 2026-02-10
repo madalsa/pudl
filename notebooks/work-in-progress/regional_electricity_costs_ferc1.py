@@ -138,6 +138,10 @@ plant = load_and_filter("core_ferc1__yearly_plant_in_service_sched204")
 plant = deflate(plant, ["ending_balance", "additions", "retirements", "adjustments", "transfers"])
 print(f"  Plant in Service (sched 204): {len(plant)} rows")
 
+rate_base_raw = load_and_filter("out_ferc1__yearly_rate_base")
+rate_base_raw = deflate(rate_base_raw, ["ending_balance"])
+print(f"  Rate Base (output table): {len(rate_base_raw)} rows")
+
 rev = load_and_filter("core_ferc1__yearly_operating_revenues_sched300")
 rev = deflate(rev, ["dollar_value"])
 print(f"  Operating Revenues (sched 300): {len(rev)} rows")
@@ -460,6 +464,211 @@ plt.show()
 
 
 # ---------------------------------------------------------------------------
+# 3b. Actual Rate Base (from PUDL output table)
+# ---------------------------------------------------------------------------
+print("\n--- Actual Rate Base Analysis ---")
+
+# Map rate_base_category to functional groups for comparison with plant-in-service
+RATE_BASE_FUNC_MAP = {
+    "steam": "Production",
+    "nuclear": "Production",
+    "hydro": "Production",
+    "other_production": "Production",
+    "transmission": "Transmission",
+    "distribution": "Distribution",
+    "general_plant": "General",
+    "intangible_plant": "Intangible",
+    "net_ADIT": "Net ADIT",
+    "net_working_capital": "Net Working Capital",
+    "net_utility_plant": "Net Utility Plant Adjustments",
+    "net_nuclear_fuel": "Production",
+    "other_plant": "Other",
+    "experimental_plant": "Other",
+    "regional_transmission_and_market_operation": "Transmission",
+    "net_regulatory_assets": "Regulatory Assets",
+    "other_deferred_debits_and_credits": "Other",
+    "AROs": "Other",
+    "asset_retirement_costs": "Other",
+    "utility_plant": "Net Utility Plant Adjustments",
+}
+
+# Filter to electric utility type and aggregate by functional group
+rb = rate_base_raw[rate_base_raw["utility_type"] == "electric"].copy()
+rb["func_group"] = rb["rate_base_category"].map(RATE_BASE_FUNC_MAP)
+rb["utility_name"] = rb["utility_id_ferc1"].map(UTIL_NAMES)
+rb["state"] = rb["utility_id_ferc1"].map(UTIL_STATES)
+
+# Aggregate: total rate base per utility per year per functional group
+rb_func = (
+    rb.groupby(["utility_id_ferc1", "utility_name", "state", "report_year", "func_group"])[
+        "ending_balance"
+    ]
+    .sum()
+    .reset_index()
+)
+
+rb_pivot = rb_func.pivot_table(
+    index=["utility_id_ferc1", "utility_name", "state", "report_year"],
+    columns="func_group",
+    values="ending_balance",
+    aggfunc="sum",
+).reset_index()
+
+# Compute total rate base (sum of all components, ADIT subtracts automatically since it's negative)
+rate_base_components = [
+    c for c in rb_pivot.columns
+    if c not in ["utility_id_ferc1", "utility_name", "state", "report_year"]
+]
+rb_pivot["Total Rate Base"] = rb_pivot[rate_base_components].sum(axis=1)
+
+# --- Figure 7b: Rate base by function (absolute) ---
+fig, axes = plt.subplots(1, 3, figsize=(24, 8), sharey=False)
+for ax, cat in zip(axes, ["Production", "Transmission", "Distribution"]):
+    for uid in UTIL_IDS:
+        df_u = rb_pivot[rb_pivot["utility_id_ferc1"] == uid].sort_values("report_year")
+        if cat in df_u.columns and df_u[cat].notna().any():
+            ax.plot(
+                df_u["report_year"],
+                df_u[cat] / 1e9,
+                color=UTIL_COLORS[uid],
+                lw=2.5,
+                label=UTIL_NAMES[uid],
+            )
+    ax.set_title(f"{cat} Rate Base", fontweight="bold")
+    ax.set_xlabel("Year")
+    ax.set_ylabel("Billion 2024 $")
+    ax.grid(lw=0.3)
+    ax.xaxis.set_major_locator(mticker.MaxNLocator(integer=True))
+
+axes[0].legend(bbox_to_anchor=(0, -0.25), loc="upper left", ncol=3, fontsize=9)
+plt.suptitle(
+    "Rate Base by Function (Real 2024 $)\nFERC Form 1 (PUDL Rate Base Output), 2015-2024",
+    fontweight="bold",
+    y=1.02,
+)
+plt.tight_layout()
+plt.savefig(OUTPUT_DIR / "07b_rate_base_by_function.png", dpi=150, bbox_inches="tight")
+plt.show()
+
+# --- Figure 7c: Rate base normalized ---
+fig, axes = plt.subplots(1, 3, figsize=(24, 8), sharey=True)
+for ax, cat in zip(axes, ["Production", "Transmission", "Distribution"]):
+    for uid in UTIL_IDS:
+        df_u = rb_pivot[rb_pivot["utility_id_ferc1"] == uid].sort_values("report_year")
+        if cat not in df_u.columns or df_u[cat].isna().all():
+            continue
+        base_val = df_u[df_u["report_year"] == BASE_YEAR][cat]
+        if base_val.empty or base_val.item() == 0:
+            continue
+        normalized = df_u[cat] / base_val.item()
+        ax.plot(
+            df_u["report_year"],
+            normalized,
+            color=UTIL_COLORS[uid],
+            lw=2.5,
+            label=UTIL_NAMES[uid],
+        )
+    ax.axhline(y=1, linestyle="dashed", color="grey", lw=1)
+    ax.set_title(f"{cat} Rate Base (Normalized)", fontweight="bold")
+    ax.set_xlabel("Year")
+    ax.set_ylabel(f"Relative to {BASE_YEAR}")
+    ax.grid(lw=0.3)
+    ax.xaxis.set_major_locator(mticker.MaxNLocator(integer=True))
+
+axes[0].legend(bbox_to_anchor=(0, -0.25), loc="upper left", ncol=3, fontsize=9)
+plt.suptitle(
+    f"Rate Base Normalized ({BASE_YEAR} = 1.0)\nFERC Form 1 (PUDL Rate Base Output)",
+    fontweight="bold",
+    y=1.02,
+)
+plt.tight_layout()
+plt.savefig(OUTPUT_DIR / "07c_rate_base_normalized.png", dpi=150, bbox_inches="tight")
+plt.show()
+
+# --- Figure 7d: Plant-in-service proxy vs actual rate base comparison ---
+fig, axes = plt.subplots(1, 2, figsize=(20, 8))
+
+# Left: Total plant in service vs total rate base (absolute)
+ax = axes[0]
+for uid in UTIL_IDS:
+    df_plant = plant_pivot[plant_pivot["utility_id_ferc1"] == uid].sort_values("report_year")
+    df_rb = rb_pivot[rb_pivot["utility_id_ferc1"] == uid].sort_values("report_year")
+    if "Total Electric Plant" in df_plant.columns and len(df_plant) > 0:
+        ax.plot(
+            df_plant["report_year"],
+            df_plant["Total Electric Plant"] / 1e9,
+            color=UTIL_COLORS[uid],
+            lw=2,
+            linestyle="--",
+            alpha=0.6,
+        )
+    if "Total Rate Base" in df_rb.columns and len(df_rb) > 0:
+        ax.plot(
+            df_rb["report_year"],
+            df_rb["Total Rate Base"] / 1e9,
+            color=UTIL_COLORS[uid],
+            lw=2.5,
+        )
+
+# Custom legend: dashed = proxy, solid = actual
+from matplotlib.lines import Line2D
+proxy_handles = [
+    Line2D([0], [0], color="black", lw=2.5, label="Actual Rate Base"),
+    Line2D([0], [0], color="black", lw=2, linestyle="--", alpha=0.6, label="Plant in Service (proxy)"),
+]
+ax.legend(handles=proxy_handles, fontsize=11)
+ax.set_title("Total Rate Base vs Plant in Service Proxy", fontweight="bold")
+ax.set_xlabel("Year")
+ax.set_ylabel("Billion 2024 $")
+ax.grid(lw=0.3)
+ax.xaxis.set_major_locator(mticker.MaxNLocator(integer=True))
+
+# Right: Ratio of rate base to plant in service (how much the proxy overstates)
+ax = axes[1]
+for uid in UTIL_IDS:
+    df_plant = plant_pivot[plant_pivot["utility_id_ferc1"] == uid].sort_values("report_year")
+    df_rb = rb_pivot[rb_pivot["utility_id_ferc1"] == uid].sort_values("report_year")
+    if (
+        "Total Electric Plant" not in df_plant.columns
+        or "Total Rate Base" not in df_rb.columns
+    ):
+        continue
+    merged = df_plant[["utility_id_ferc1", "report_year", "Total Electric Plant"]].merge(
+        df_rb[["utility_id_ferc1", "report_year", "Total Rate Base"]],
+        on=["utility_id_ferc1", "report_year"],
+    )
+    merged = merged[merged["Total Electric Plant"] > 0]
+    if len(merged) > 0:
+        ratio = merged["Total Rate Base"] / merged["Total Electric Plant"]
+        ax.plot(
+            merged["report_year"],
+            ratio,
+            color=UTIL_COLORS[uid],
+            lw=2.5,
+            label=UTIL_NAMES[uid],
+        )
+
+ax.axhline(y=1, linestyle="dashed", color="grey", lw=1)
+ax.set_title("Rate Base / Plant in Service Ratio", fontweight="bold")
+ax.set_xlabel("Year")
+ax.set_ylabel("Ratio")
+ax.grid(lw=0.3)
+ax.legend(fontsize=8, ncol=2)
+ax.xaxis.set_major_locator(mticker.MaxNLocator(integer=True))
+
+plt.suptitle(
+    "Rate Base Proxy Comparison\nPlant in Service (Sched 204) vs PUDL Rate Base Output",
+    fontweight="bold",
+    y=1.02,
+)
+plt.tight_layout()
+plt.savefig(
+    OUTPUT_DIR / "07d_rate_base_vs_plant_proxy.png", dpi=150, bbox_inches="tight"
+)
+plt.show()
+
+
+# ---------------------------------------------------------------------------
 # 4. Revenue & Electricity Sales
 # ---------------------------------------------------------------------------
 print("\n--- Revenue & Sales Analysis ---")
@@ -630,19 +839,34 @@ plt.savefig(
 plt.show()
 
 
-# --- Figure 11: Implied Return on Rate Base ---
+# --- Figure 11: Implied Return on Rate Base (proxy vs actual) ---
 noi = inc_pivot[["utility_id_ferc1", "report_year", "Net Operating Income"]].dropna()
+
+# Method 1: Plant-in-service proxy (original)
 total_plant_series = plant_pivot[plant_pivot["Total Electric Plant"].notna()][
     ["utility_id_ferc1", "report_year", "Total Electric Plant"]
 ]
-
 ror_df = noi.merge(total_plant_series, on=["utility_id_ferc1", "report_year"])
 ror_df["implied_ror"] = (
     ror_df["Net Operating Income"] / ror_df["Total Electric Plant"] * 100
 )
 ror_df["utility_name"] = ror_df["utility_id_ferc1"].map(UTIL_NAMES)
 
-fig, ax = plt.subplots(figsize=(14, 8))
+# Method 2: Actual rate base
+total_rb_series = rb_pivot[rb_pivot["Total Rate Base"].notna()][
+    ["utility_id_ferc1", "report_year", "Total Rate Base"]
+]
+ror_rb_df = noi.merge(total_rb_series, on=["utility_id_ferc1", "report_year"])
+ror_rb_df = ror_rb_df[ror_rb_df["Total Rate Base"] > 0]  # avoid division by zero/negative
+ror_rb_df["implied_ror_rb"] = (
+    ror_rb_df["Net Operating Income"] / ror_rb_df["Total Rate Base"] * 100
+)
+ror_rb_df["utility_name"] = ror_rb_df["utility_id_ferc1"].map(UTIL_NAMES)
+
+fig, axes = plt.subplots(1, 2, figsize=(24, 8), sharey=True)
+
+# Left: using plant in service proxy
+ax = axes[0]
 for uid in UTIL_IDS:
     df_u = ror_df[ror_df["utility_id_ferc1"] == uid].sort_values("report_year")
     if len(df_u) > 0:
@@ -656,14 +880,43 @@ for uid in UTIL_IDS:
             label=UTIL_NAMES[uid],
         )
 ax.set_title(
-    "Implied Return on Rate Base\n(Net Operating Income / Total Electric Plant)",
+    "Using Plant in Service (Proxy)",
     fontweight="bold",
 )
 ax.set_xlabel("Year")
 ax.set_ylabel("%")
 ax.grid(lw=0.3)
-ax.legend(fontsize=9, ncol=3, loc="upper right")
+ax.legend(fontsize=8, ncol=2, loc="upper right")
 ax.xaxis.set_major_locator(mticker.MaxNLocator(integer=True))
+
+# Right: using actual rate base
+ax = axes[1]
+for uid in UTIL_IDS:
+    df_u = ror_rb_df[ror_rb_df["utility_id_ferc1"] == uid].sort_values("report_year")
+    if len(df_u) > 0:
+        ax.plot(
+            df_u["report_year"],
+            df_u["implied_ror_rb"],
+            color=UTIL_COLORS[uid],
+            lw=2.5,
+            marker="o",
+            markersize=4,
+            label=UTIL_NAMES[uid],
+        )
+ax.set_title(
+    "Using FERC Rate Base (Actual)",
+    fontweight="bold",
+)
+ax.set_xlabel("Year")
+ax.grid(lw=0.3)
+ax.legend(fontsize=8, ncol=2, loc="upper right")
+ax.xaxis.set_major_locator(mticker.MaxNLocator(integer=True))
+
+plt.suptitle(
+    "Implied Return on Rate Base: NOI / Rate Base (%)\nFERC Form 1, 2015-2024",
+    fontweight="bold",
+    y=1.02,
+)
 plt.tight_layout()
 plt.savefig(OUTPUT_DIR / "11_implied_return_on_rate_base.png", dpi=150, bbox_inches="tight")
 plt.show()
