@@ -21,8 +21,32 @@ from pathlib import Path
 S3_BASE = "https://s3.us-west-2.amazonaws.com/pudl.catalyst.coop/nightly"
 YEARS = range(2015, 2025)
 BASE_YEAR = 2015
+REAL_DOLLAR_YEAR = 2024
 OUTPUT_DIR = Path("output_figures")
 OUTPUT_DIR.mkdir(exist_ok=True)
+
+# BLS CPI-U Annual Averages (All Items, U.S. City Average, 1982-84=100, NSA)
+# Source: https://www.bls.gov/cpi/tables/supplemental-files/
+CPI_U = {
+    2015: 237.017,
+    2016: 240.007,
+    2017: 245.120,
+    2018: 251.107,
+    2019: 255.657,
+    2020: 258.811,
+    2021: 270.970,
+    2022: 292.655,
+    2023: 304.702,
+    2024: 313.689,
+}
+
+# Deflator: multiply nominal $ by this to get real REAL_DOLLAR_YEAR $
+DEFLATOR = {yr: CPI_U[REAL_DOLLAR_YEAR] / cpi for yr, cpi in CPI_U.items()}
+
+# Minimum annual retail sales (MWh) to include a utility in per-MWh calculations.
+# Filters out T&D-only utilities in deregulated states (e.g., Central Maine Power)
+# that report near-zero commodity sales but significant distribution revenue.
+MIN_RETAIL_MWH = 100_000
 
 # Major IOUs in each target state (utility_id_ferc1 -> metadata)
 TARGET_UTILITIES = {
@@ -96,21 +120,37 @@ def load_and_filter(table_name):
     ].copy()
 
 
+def deflate(df, dollar_cols, year_col="report_year"):
+    """Convert nominal dollar columns to real (REAL_DOLLAR_YEAR) dollars using CPI-U."""
+    df = df.copy()
+    for col in dollar_cols:
+        if col in df.columns:
+            df[col] = df[col] * df[year_col].map(DEFLATOR)
+    return df
+
+
 print("\nLoading tables...")
 opex = load_and_filter("core_ferc1__yearly_operating_expenses_sched320")
+opex = deflate(opex, ["dollar_value"])
 print(f"  Operating Expenses (sched 320): {len(opex)} rows")
 
 plant = load_and_filter("core_ferc1__yearly_plant_in_service_sched204")
+plant = deflate(plant, ["ending_balance", "additions", "retirements", "adjustments", "transfers"])
 print(f"  Plant in Service (sched 204): {len(plant)} rows")
 
 rev = load_and_filter("core_ferc1__yearly_operating_revenues_sched300")
+rev = deflate(rev, ["dollar_value"])
 print(f"  Operating Revenues (sched 300): {len(rev)} rows")
 
 inc = load_and_filter("core_ferc1__yearly_income_statements_sched114")
+inc = deflate(inc, ["dollar_value"])
 print(f"  Income Statements (sched 114): {len(inc)} rows")
 
 dep = load_and_filter("core_ferc1__yearly_depreciation_summary_sched336")
+dep = deflate(dep, ["dollar_value"])
 print(f"  Depreciation Summary (sched 336): {len(dep)} rows")
+
+print(f"\n  All dollar values deflated to {REAL_DOLLAR_YEAR} dollars using CPI-U.")
 
 
 # ---------------------------------------------------------------------------
@@ -157,13 +197,13 @@ for ax, cat in zip(axes, ["Generation", "Transmission", "Distribution"]):
             )
     ax.set_title(f"{cat} O&M Expenses", fontweight="bold")
     ax.set_xlabel("Year")
-    ax.set_ylabel("Billion $")
+    ax.set_ylabel("Billion 2024 $")
     ax.grid(lw=0.3)
     ax.xaxis.set_major_locator(mticker.MaxNLocator(integer=True))
 
 axes[0].legend(bbox_to_anchor=(0, -0.25), loc="upper left", ncol=3, fontsize=9)
 plt.suptitle(
-    "O&M Expenses by Functional Category (Nominal $)\nFERC Form 1, 2015-2024",
+    "O&M Expenses by Functional Category (Real 2024 $)\nFERC Form 1, 2015-2024",
     fontweight="bold",
     y=1.02,
 )
@@ -231,13 +271,13 @@ for ax, cat in zip(axes, ["Generation", "Transmission", "Distribution"]):
             )
     ax.set_title(f"{cat} O&M by State", fontweight="bold")
     ax.set_xlabel("Year")
-    ax.set_ylabel("Billion $")
+    ax.set_ylabel("Billion 2024 $")
     ax.grid(lw=0.3)
     ax.legend()
     ax.xaxis.set_major_locator(mticker.MaxNLocator(integer=True))
 
 plt.suptitle(
-    "State-Aggregated O&M Expenses (Nominal $)\nFERC Form 1, 2015-2024",
+    "State-Aggregated O&M Expenses (Real 2024 $)\nFERC Form 1, 2015-2024",
     fontweight="bold",
     y=1.02,
 )
@@ -265,7 +305,7 @@ fig, ax = plt.subplots(figsize=(16, 8))
 latest[stack_cols].div(1e9).plot(
     kind="barh", stacked=True, ax=ax, colormap="tab10", edgecolor="white"
 )
-ax.set_xlabel("Billion $")
+ax.set_xlabel("Billion 2024 $")
 ax.set_title(
     f"O&M Cost Breakdown by Utility ({latest_year})\nFERC Form 1 Schedule 320",
     fontweight="bold",
@@ -327,13 +367,13 @@ for ax, cat in zip(axes, ["Production", "Transmission", "Distribution"]):
             )
     ax.set_title(f"{cat} Plant in Service", fontweight="bold")
     ax.set_xlabel("Year")
-    ax.set_ylabel("Billion $")
+    ax.set_ylabel("Billion 2024 $")
     ax.grid(lw=0.3)
     ax.xaxis.set_major_locator(mticker.MaxNLocator(integer=True))
 
 axes[0].legend(bbox_to_anchor=(0, -0.25), loc="upper left", ncol=3, fontsize=9)
 plt.suptitle(
-    "Electric Plant in Service (Nominal $)\nFERC Form 1 Schedule 204, 2015-2024",
+    "Electric Plant in Service (Real 2024 $)\nFERC Form 1 Schedule 204, 2015-2024",
     fontweight="bold",
     y=1.02,
 )
@@ -404,13 +444,13 @@ for ax, cat in zip(axes, ["Production", "Transmission", "Distribution"]):
             )
     ax.set_title(f"{cat} Capital Additions", fontweight="bold")
     ax.set_xlabel("Year")
-    ax.set_ylabel("Billion $")
+    ax.set_ylabel("Billion 2024 $")
     ax.grid(lw=0.3)
     ax.xaxis.set_major_locator(mticker.MaxNLocator(integer=True))
 
 axes[0].legend(bbox_to_anchor=(0, -0.25), loc="upper left", ncol=3, fontsize=9)
 plt.suptitle(
-    "Annual Capital Additions (Nominal $)\nFERC Form 1 Schedule 204, 2015-2024",
+    "Annual Capital Additions (Real 2024 $)\nFERC Form 1 Schedule 204, 2015-2024",
     fontweight="bold",
     y=1.02,
 )
@@ -459,7 +499,7 @@ for uid in UTIL_IDS:
         )
 ax.set_title("Total Electric Operating Revenues", fontweight="bold")
 ax.set_xlabel("Year")
-ax.set_ylabel("Billion $")
+ax.set_ylabel("Billion 2024 $")
 ax.grid(lw=0.3)
 ax.legend(fontsize=8, ncol=2)
 ax.xaxis.set_major_locator(mticker.MaxNLocator(integer=True))
@@ -497,11 +537,8 @@ for ax, cls in zip(axes, ["Residential", "Total Retail"]):
     cls_data = rev_class[rev_class["customer_class"] == cls]
     for uid in UTIL_IDS:
         df_u = cls_data[cls_data["utility_id_ferc1"] == uid].sort_values("report_year")
-        if (
-            len(df_u) > 0
-            and df_u["sales_mwh"].notna().any()
-            and (df_u["sales_mwh"] > 0).any()
-        ):
+        df_u = df_u[df_u["sales_mwh"] >= MIN_RETAIL_MWH]
+        if len(df_u) > 0:
             avg_price = df_u["dollar_value"] / df_u["sales_mwh"]  # $/MWh
             ax.plot(
                 df_u["report_year"],
@@ -512,7 +549,7 @@ for ax, cls in zip(axes, ["Residential", "Total Retail"]):
             )
     ax.set_title(f"Average {cls} Electricity Price", fontweight="bold")
     ax.set_xlabel("Year")
-    ax.set_ylabel("cents/kWh")
+    ax.set_ylabel("2024 cents/kWh")
     ax.grid(lw=0.3)
     ax.legend(fontsize=8, ncol=2)
     ax.xaxis.set_major_locator(mticker.MaxNLocator(integer=True))
@@ -576,7 +613,7 @@ for ax, item in zip(
             )
     ax.set_title(item, fontweight="bold")
     ax.set_xlabel("Year")
-    ax.set_ylabel("Billion $")
+    ax.set_ylabel("Billion 2024 $")
     ax.grid(lw=0.3)
     ax.xaxis.set_major_locator(mticker.MaxNLocator(integer=True))
 
@@ -692,7 +729,7 @@ for ax, (st, uid) in zip(axes, largest_by_state.items()):
             )
 
     ax.set_title(f"{UTIL_NAMES[uid]} ({STATE_NAMES[st]})", fontweight="bold")
-    ax.set_ylabel("Billion $")
+    ax.set_ylabel("Billion 2024 $")
     ax.legend(loc="upper left", fontsize=9)
     ax.grid(lw=0.3)
 
@@ -716,9 +753,12 @@ plt.show()
 # ---------------------------------------------------------------------------
 print("\n--- O&M Cost per MWh ---")
 
-retail_sales = rev_class[rev_class["customer_class"] == "Total Retail"][
-    ["utility_id_ferc1", "report_year", "sales_mwh"]
-].rename(columns={"sales_mwh": "retail_mwh"})
+retail_sales = rev_class[
+    (rev_class["customer_class"] == "Total Retail")
+    & (rev_class["sales_mwh"] >= MIN_RETAIL_MWH)
+][["utility_id_ferc1", "report_year", "sales_mwh"]].rename(
+    columns={"sales_mwh": "retail_mwh"}
+)
 
 cost_per_mwh = opex_pivot.merge(
     retail_sales, on=["utility_id_ferc1", "report_year"]
@@ -746,7 +786,7 @@ for ax, cat in zip(axes, ["Generation", "Transmission", "Distribution"]):
             )
     ax.set_title(f"{cat} O&M per MWh", fontweight="bold")
     ax.set_xlabel("Year")
-    ax.set_ylabel("$/MWh")
+    ax.set_ylabel("2024 $/MWh")
     ax.grid(lw=0.3)
     ax.xaxis.set_major_locator(mticker.MaxNLocator(integer=True))
 
@@ -766,8 +806,8 @@ plt.show()
 # ---------------------------------------------------------------------------
 print("\n--- Cross-State Comparison ---")
 
-# Average price by state
-rev_class_state = rev_class.copy()
+# Average price by state (exclude utilities with unreliable sales_mwh)
+rev_class_state = rev_class[rev_class["sales_mwh"] >= MIN_RETAIL_MWH].copy()
 state_retail = (
     rev_class_state[rev_class_state["customer_class"] == "Total Retail"]
     .groupby(["state", "report_year"])
@@ -796,7 +836,7 @@ ax.set_title(
     fontweight="bold",
 )
 ax.set_xlabel("Year")
-ax.set_ylabel("cents/kWh")
+ax.set_ylabel("2024 cents/kWh")
 ax.grid(lw=0.3)
 ax.legend(fontsize=14)
 ax.xaxis.set_major_locator(mticker.MaxNLocator(integer=True))
@@ -845,9 +885,15 @@ if (
 
 
 # --- Figure 16: Revenue per MWh by state ---
+# Only include revenue from utilities with reliable retail sales data
+utils_with_sales = retail_sales["utility_id_ferc1"].unique()
 total_rev_state = (
-    total_rev.groupby(["state", "report_year"])["dollar_value"].sum().reset_index()
+    total_rev[total_rev["utility_id_ferc1"].isin(utils_with_sales)]
+    .groupby(["state", "report_year"])["dollar_value"]
+    .sum()
+    .reset_index()
 )
+# retail_sales already filtered to MIN_RETAIL_MWH above
 retail_mwh_state = retail_sales.copy()
 retail_mwh_state["state"] = retail_mwh_state["utility_id_ferc1"].map(UTIL_STATES)
 retail_mwh_state = (
@@ -874,9 +920,9 @@ for st in STATE_COLORS:
             lw=4,
             label=STATE_NAMES[st],
         )
-ax.set_title("Revenue per MWh (Nominal)", fontweight="bold")
+ax.set_title("Revenue per MWh (Real 2024 $)", fontweight="bold")
 ax.set_xlabel("Year")
-ax.set_ylabel("$/MWh")
+ax.set_ylabel("2024 $/MWh")
 ax.grid(lw=0.3)
 ax.legend(fontsize=14)
 ax.xaxis.set_major_locator(mticker.MaxNLocator(integer=True))
