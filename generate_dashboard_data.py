@@ -79,7 +79,7 @@ def compute_utility_rates(sales_df):
     # Aggregate by utility, year, class
     agg = (
         df.groupby([name_col, "year", "customer_class"])
-        .agg({"sales_mwh": "sum", "revenues": "sum", "customers": "sum"})
+        .agg({"sales_mwh": "sum", "sales_revenue": "sum", "customers": "sum"})
         .reset_index()
     )
 
@@ -92,7 +92,7 @@ def compute_utility_rates(sales_df):
 
     # Compute rates in real ¢/kWh
     agg["deflator"] = agg["year"].map(DEFLATOR)
-    agg["real_revenue"] = agg["revenues"] * agg["deflator"]
+    agg["real_revenue"] = agg["sales_revenue"] * agg["deflator"]
     agg["rate_ckwh"] = np.where(
         agg["sales_mwh"] > 0,
         (agg["real_revenue"] / agg["sales_mwh"]) * 100 / 1000,  # $/MWh -> ¢/kWh
