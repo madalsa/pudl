@@ -45,8 +45,8 @@ DASHBOARD_HTML = Path("rate_changes_dashboard.html")
 
 
 def load_eia861_sales():
-    """Load EIA-861 sales to ultimate consumers from PUDL nightly S3 build."""
-    table = "core_eia861__yearly_sales_to_ultimate_consumers"
+    """Load EIA-861 sales from PUDL nightly S3 build."""
+    table = "core_eia861__yearly_sales"
     url = f"{S3_BASE}/{table}.parquet"
     print(f"Loading {url}...")
     df = pd.read_parquet(url)
