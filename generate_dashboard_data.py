@@ -297,20 +297,18 @@ def main():
             print(f"    {item['name']}: ind {ind:+.1f} TWh, com {com:+.1f} TWh, total {item['total_abs_chg']:+.1f} TWh")
 
     # Build utility list for search (sorted by most recent total sales)
-    util_list = sorted(
-        utility_rates.keys(),
-        key=lambda n: sum(
-            utility_rates[n].get(c, {}).get("sales_twh", [0])[-1:]
-            for c in ["residential", "commercial", "industrial"]
-        ),
-        reverse=True,
-    )
+    def _latest_sales(n):
+        t = 0
+        for c in ["residential", "commercial", "industrial"]:
+            twh = utility_rates[n].get(c, {}).get("sales_twh", [])
+            if twh:
+                t += twh[-1]
+        return t
+
+    util_list = sorted(utility_rates.keys(), key=_latest_sales, reverse=True)
     print(f"\nTop 10 utilities by sales:")
     for name in util_list[:10]:
-        total = sum(
-            utility_rates[name].get(c, {}).get("sales_twh", [0])[-1]
-            for c in ["residential", "commercial", "industrial"]
-        )
+        total = _latest_sales(name)
         print(f"  {name}: {total:.1f} TWh")
 
     # Load existing dashboard data if present
