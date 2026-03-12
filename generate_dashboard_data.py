@@ -333,9 +333,19 @@ def main():
     existing["utility_list"] = util_list
     existing["load_growth"] = load_growth
 
-    # Write to JSON backup
+    # Write to JSON backup (convert numpy types to native Python for serialization)
+    class NumpyEncoder(json.JSONEncoder):
+        def default(self, obj):
+            if isinstance(obj, (np.integer,)):
+                return int(obj)
+            if isinstance(obj, (np.floating,)):
+                return float(obj)
+            if isinstance(obj, np.ndarray):
+                return obj.tolist()
+            return super().default(obj)
+
     with open(OUTPUT_JSON, "w") as f:
-        json.dump(existing, f, separators=(",", ":"))
+        json.dump(existing, f, separators=(",", ":"), cls=NumpyEncoder)
     size_mb = OUTPUT_JSON.stat().st_size / 1e6
     print(f"\nWrote {OUTPUT_JSON} ({size_mb:.1f} MB)")
 
@@ -344,7 +354,7 @@ def main():
         print(f"Embedding data into {DASHBOARD_HTML}...")
         with open(DASHBOARD_HTML) as f:
             html = f.read()
-        data_json = json.dumps(existing, separators=(",", ":"))
+        data_json = json.dumps(existing, separators=(",", ":"), cls=NumpyEncoder)
         new_data_line = f"const D = {data_json};\n"
         # Replace the existing const D = {...}; line
         new_html = re.sub(
