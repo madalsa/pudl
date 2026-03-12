@@ -16,6 +16,7 @@ Output:
 """
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -334,13 +335,34 @@ def main():
     existing["utility_list"] = util_list
     existing["load_growth"] = load_growth
 
-    # Write to JSON (can be embedded into HTML later)
+    # Write to JSON backup
     with open(OUTPUT_JSON, "w") as f:
         json.dump(existing, f, separators=(",", ":"))
-
     size_mb = OUTPUT_JSON.stat().st_size / 1e6
     print(f"\nWrote {OUTPUT_JSON} ({size_mb:.1f} MB)")
-    print("Run the dashboard rebuild script to embed this data into the HTML.")
+
+    # Auto-embed into dashboard HTML
+    if DASHBOARD_HTML.exists():
+        print(f"Embedding data into {DASHBOARD_HTML}...")
+        with open(DASHBOARD_HTML) as f:
+            html = f.read()
+        data_json = json.dumps(existing, separators=(",", ":"))
+        new_data_line = f"const D = {data_json};\n"
+        # Replace the existing const D = {...}; line
+        new_html = re.sub(
+            r"const D = \{.*?\};\n",
+            lambda m: new_data_line,
+            html,
+            count=1,
+            flags=re.DOTALL,
+        )
+        with open(DASHBOARD_HTML, "w") as f:
+            f.write(new_html)
+        html_mb = DASHBOARD_HTML.stat().st_size / 1e6
+        print(f"Updated {DASHBOARD_HTML} ({html_mb:.1f} MB)")
+        print("Open it in your browser — all data is now embedded.")
+    else:
+        print(f"\n{DASHBOARD_HTML} not found. Embed the JSON manually into the HTML.")
 
 
 if __name__ == "__main__":
