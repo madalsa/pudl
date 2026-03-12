@@ -203,6 +203,61 @@ def compute_utility_sales_mix(utility_customers):
     return utility_mix
 
 
+def compute_load_growth(sales_df, base_year=2019, end_year=2024, min_twh=1.0):
+    """Compute utility-level load growth for industrial AND commercial classes.
+
+    Data centers are classified as industrial by some utilities and commercial by
+    others, so both classes must be examined to identify demand hotspots.
+
+    Returns list of dicts sorted by absolute TWh change (industrial + commercial combined).
+    """
+    df = sales_df[sales_df["year"].isin([base_year, end_year])].copy()
+    class_map = {"commercial": "commercial", "industrial": "industrial"}
+    df = df[df["customer_class"].isin(class_map.keys())].copy()
+    df["customer_class"] = df["customer_class"].map(class_map)
+
+    name_col = "utility_name_eia"
+
+    agg = (
+        df.groupby([name_col, "year", "customer_class"])
+        .agg({"sales_mwh": "sum", "customers": "sum"})
+        .reset_index()
+    )
+    agg["sales_twh"] = agg["sales_mwh"] / 1e6
+
+    results = []
+    for util_name, util_df in agg.groupby(name_col):
+        entry = {"name": util_name}
+        total_abs_chg = 0
+        for cls in ["industrial", "commercial"]:
+            cls_df = util_df[util_df["customer_class"] == cls].sort_values("year")
+            base = cls_df[cls_df["year"] == base_year]
+            end = cls_df[cls_df["year"] == end_year]
+            if len(base) == 0 or len(end) == 0:
+                continue
+            twh_base = base["sales_twh"].values[0]
+            twh_end = end["sales_twh"].values[0]
+            cust_base = int(base["customers"].values[0])
+            cust_end = int(end["customers"].values[0])
+            abs_chg = twh_end - twh_base
+            pct_chg = 100 * abs_chg / twh_base if twh_base > 0 else 0
+            entry[f"{cls}_twh_{base_year % 100}"] = round(twh_base, 2)
+            entry[f"{cls}_twh_{end_year % 100}"] = round(twh_end, 2)
+            entry[f"{cls}_pct_chg"] = round(pct_chg, 1)
+            entry[f"{cls}_abs_chg"] = round(abs_chg, 2)
+            entry[f"{cls}_cust_{base_year % 100}"] = cust_base
+            entry[f"{cls}_cust_{end_year % 100}"] = cust_end
+            total_abs_chg += abs_chg
+
+        entry["total_abs_chg"] = round(total_abs_chg, 2)
+        # Only include if there's meaningful growth
+        if total_abs_chg >= min_twh:
+            results.append(entry)
+
+    results.sort(key=lambda x: x["total_abs_chg"], reverse=True)
+    return results
+
+
 def main():
     print("=" * 60)
     print("Generating utility-level dashboard data from EIA-861")
@@ -229,6 +284,16 @@ def main():
     print("Computing utility-level sales mix...")
     utility_mix = compute_utility_sales_mix(utility_customers)
     print(f"  {len(utility_mix)} utilities with mix data")
+
+    print("Computing industrial + commercial load growth (2019-2024)...")
+    load_growth = compute_load_growth(sales)
+    print(f"  {len(load_growth)} utilities with significant load growth")
+    if load_growth:
+        print("  Top 5 by combined industrial + commercial TWh growth:")
+        for item in load_growth[:5]:
+            ind = item.get("industrial_abs_chg", 0)
+            com = item.get("commercial_abs_chg", 0)
+            print(f"    {item['name']}: ind {ind:+.1f} TWh, com {com:+.1f} TWh, total {item['total_abs_chg']:+.1f} TWh")
 
     # Build utility list for search (sorted by most recent total sales)
     util_list = sorted(
@@ -267,6 +332,7 @@ def main():
     existing["utility_customers"] = utility_customers
     existing["utility_mix"] = utility_mix
     existing["utility_list"] = util_list
+    existing["load_growth"] = load_growth
 
     # Write to JSON (can be embedded into HTML later)
     with open(OUTPUT_JSON, "w") as f:
