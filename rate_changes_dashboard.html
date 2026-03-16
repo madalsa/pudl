@@ -166,7 +166,7 @@
         <b>Where does the money go?</b> Since 2019, capital spending by investor-owned utilities has
         <b>grown 10%</b> from $118B to $130B/year. Distribution increased 33% ($41B &rarr; $54B),
         while generation capex fell 18% ($38B &rarr; $31B). Transmission rose 9% to $31B.
-        Generation operating costs dropped $7.6B (&minus;6%) as renewables and gas displaced coal.
+        Generation operating costs dropped $7.6B (&minus;6%)
     </div>
 
     <div class="section-title">All IOUs combined &mdash; capital spending</div>
@@ -236,8 +236,7 @@
         net operating income trends, and profit margins across all FERC Form 1 filers.
     </div>
     <div class="placeholder-msg" style="padding: 60px 20px;">
-        This section is under development. We are refining how utility profits and rate of return
-        are calculated and presented. Check back soon for a comprehensive analysis of regulated utility profitability.
+        This section is under development. Check back soon
     </div>
 </div>
 
@@ -246,11 +245,6 @@
 <!-- ═══════════════════════════════════════════════════════════════════════ -->
 <div id="tab-customers" class="tab-content">
     <div class="key-message">
-        Residential customers have grown ~1%/yr nationally.
-        The key story since 2019 has been a <b>surge in load at specific utilities</b> driven by data centers and electrification.
-        Data center load shows up as both industrial and commercial sales.
-        Hyperscale facilities are often industrial, while colocation and smaller facilities are often commercial.
-        We account for both classes to spot where data centers are landing.
     </div>
 
     <div class="section-title">National trends</div>
@@ -709,12 +703,10 @@ window.addEventListener('load', () => {
     renderAggCapex();
     renderAggOpex();
 
-    // Pre-load PG&E as example
-    const pge = D.iou_list.find(n => n.includes('PACIFIC GAS'));
-    if (pge) {
-        document.getElementById('iou-spend-input').value = pge.substring(0, 55);
-        updateIOU(pge);
-    }
+    // Show placeholder message instead of pre-loading a utility
+    document.getElementById('iou-chart-top').innerHTML = '<div class="placeholder-msg">Search for a utility above to see its capital and operating expense trends</div>';
+    document.getElementById('iou-chart-opex').innerHTML = '';
+    document.getElementById('iou-chart-capex').innerHTML = '';
 });
 </script>
 </body>
