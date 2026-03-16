@@ -75,9 +75,6 @@
         .placeholder-msg { padding: 30px 20px; text-align: center; color: #8a7e91;
                           font-style: italic; background: #fdf9fb; border-radius: 8px;
                           border: 1px dashed #e8dfe5; margin: 10px 0; }
-
-
-
         @media (max-width: 900px) {
             .tab-nav { overflow-x: auto; padding: 0 15px; }
             .tab-btn { padding: 10px 14px; font-size: 0.85rem; }
@@ -87,6 +84,26 @@
     </style>
 </head>
 <body>
+
+<nav style="background:#4a1942;padding:0 40px;display:flex;align-items:center;justify-content:space-between;font-family:'Inter',sans-serif;">
+    <a href="/" style="display:flex;align-items:center;gap:10px;text-decoration:none;color:white;padding:12px 0;">
+        <svg width="40" height="32" viewBox="0 0 48 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M 5 10 V 30 H 15" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M 20 30 L 29 10 L 38 30" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M 3 22 Q 22 -1 43 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none" opacity="0.7"/>
+            <circle cx="43" cy="5" r="2.8" fill="currentColor" opacity="0.85"/>
+        </svg>
+        <span style="font-weight:600;font-size:1.1rem;">Long Arc Lab</span>
+    </a>
+    <div style="display:flex;gap:24px;font-size:0.9rem;">
+        <a href="/" style="color:rgba(255,255,255,0.7);text-decoration:none;">Home</a>
+        <a href="/publications" style="color:rgba(255,255,255,0.7);text-decoration:none;">Publications</a>
+        <a href="/blog" style="color:rgba(255,255,255,0.7);text-decoration:none;">Blog</a>
+        <a href="/media" style="color:rgba(255,255,255,0.7);text-decoration:none;">Media</a>
+        <a href="/tools" style="color:rgba(255,255,255,1);text-decoration:none;font-weight:500;">Tools & Data</a>
+        <a href="/team" style="color:rgba(255,255,255,0.7);text-decoration:none;">Team</a>
+    </div>
+</nav>
 
 <div class="header">
     <h1>Electricity Affordability Dashboard</h1>
